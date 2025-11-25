@@ -1,0 +1,4 @@
+fastapi
+aiogram==3.*
+uvicorn
+httpx
