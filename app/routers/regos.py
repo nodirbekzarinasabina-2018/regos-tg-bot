@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, HTTPException
 
-from core.bot_manager import get_bot
-from handlers.regos import handle_regos_event
+from app.core.bot_manager import get_bot
+from app.handlers.regos import handle_regos_event
 
 router = APIRouter(prefix="/regos", tags=["regos"])
 
