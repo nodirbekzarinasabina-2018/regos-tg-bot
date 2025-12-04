@@ -5,40 +5,39 @@ from app.utils.helpers import normalize_phone
 from app.handlers.telegram import GROUPS, USERS
 
 
-async def handle_regos_event(
-    *,
-    bot: Bot,
-    account_code: str,
-    payload: dict
-):
-    """
-    Regos webhook core handler
-    """
+from app.core.db import get_conn
+from app.utils.formatters import format_sale, format_payment
 
-    event = payload.get("event") or payload.get("type")
 
-    # Telefon bo‘lsa — personal yuboramiz
-    phone_raw = payload.get("phone") or payload.get("partner_phone")
-    phone = normalize_phone(phone_raw) if phone_raw else None
+async def handle_regos_event(bot, account_code: str, payload: dict):
+    text = _format_payload(payload)
 
-    # Xabar matni
-    text: str | None = None
+    # 1️⃣ DOIM guruhlarga yuboramiz
+    conn = get_conn()
+    cur = conn.cursor()
 
-    if event in ("DocWholeSalePerformed", "SALE"):
-        text = format_sale(payload)
+    cur.execute("SELECT id FROM groups")
+    group_ids = cur.fetchall()
 
-    elif event in ("DocPaymentPerformed", "PAYMENT"):
-        text = format_payment(payload)
-
-    if not text:
-        return
-
-    # 1️⃣ Agar telefon bo‘lsa → faqat o‘sha odam
-    if phone and phone in USERS.get(account_code, {}):
-        user_id = USERS[account_code][phone]
-        await bot.send_message(user_id, text)
-        return
-
-    # 2️⃣ Aks holda → guruh(lar)
-    for group_id in GROUPS.get(account_code, set()):
+    for (group_id,) in group_ids:
         await bot.send_message(group_id, text)
+
+    # 2️⃣ AGAR telefon bo'lsa — shaxsiyga HAM yuboramiz
+    phone = payload.get("phone")
+    if phone:
+        cur.execute(
+            "SELECT id FROM users WHERE phone = ?",
+            (phone,)
+        )
+        row = cur.fetchone()
+        if row:
+            user_id = row[0]
+            await bot.send_message(user_id, text)
+
+    conn.close()
+
+
+def _format_payload(payload: dict) -> str:
+    if payload.get("event") == "DocPaymentPerformed":
+        return format_payment(payload)
+    return format_sale(payload)
