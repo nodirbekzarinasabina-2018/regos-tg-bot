@@ -25,15 +25,27 @@ async def group_detect(message: Message):
         account = _get_account_code(message)
         GROUPS.setdefault(account, set()).add(message.chat.id)
 
-@router.message(lambda m: m.contact is not None)
+@router.message(lambda m: m.contact is not None or (m.text is not None and any(ch.isdigit() for ch in m.text)))
 async def contact_handler(message: Message):
-    account = _get_account_code(message)
-    phone = normalize_phone(message.contact.phone_number)
+    # faqat shaxsiy chatda qabul qilamiz
+    if message.chat.type != "private":
+        return
 
+    account = _get_account_code(message)
+
+    # 1) Agar Contact yuborilgan bo‘lsa
+    if message.contact is not None:
+        raw_phone = message.contact.phone_number
+    # 2) Agar oddiy matn yuborilgan bo‘lsa
+    else:
+        raw_phone = message.text
+
+    phone = normalize_phone(raw_phone)
+
+    # xotira (oldingi logika)
     USERS.setdefault(account, {})[phone] = message.from_user.id
 
-    # ✅ DB ga saqlash
-    from app.core.db import get_conn
+    # DB ga yozamiz
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(
@@ -44,6 +56,7 @@ async def contact_handler(message: Message):
     conn.close()
 
     await message.answer("✅ Telefon saqlandi")
+
 
 def _get_account_code(message: Message) -> str:
     # Hozircha bitta test account
