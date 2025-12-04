@@ -3,13 +3,16 @@ from pathlib import Path
 
 DB_PATH = Path("data/app.db")
 
+
 def get_conn():
     return sqlite3.connect(DB_PATH)
+
 
 def init_db():
     conn = get_conn()
     cur = conn.cursor()
 
+    # users
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY,
@@ -17,14 +20,14 @@ def init_db():
     )
     """)
 
+    # groups
     cur.execute("""
     CREATE TABLE IF NOT EXISTS groups (
         id INTEGER PRIMARY KEY
     )
     """)
 
-    conn.commit()
-    conn.close()
+    # accounts
     cur.execute("""
     CREATE TABLE IF NOT EXISTS accounts (
         account_code TEXT PRIMARY KEY,
@@ -32,3 +35,6 @@ def init_db():
         is_active INTEGER DEFAULT 1
     )
     """)
+
+    conn.commit()
+    conn.close()
