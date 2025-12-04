@@ -44,3 +44,20 @@ from app.core.bot_manager import reload_bots
 def reload_tokens():
     reload_bots()
     return {"ok": True}
+@router.put("/accounts/{account_code}")
+def update_account(account_code: str, data: AccountIn):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        UPDATE accounts
+        SET bot_token = ?, is_active = ?
+        WHERE account_code = ?
+        """,
+        (data.bot_token, int(data.is_active), account_code)
+    )
+    conn.commit()
+    conn.close()
+
+    return {"ok": True}
