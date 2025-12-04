@@ -1,5 +1,5 @@
 from aiogram import Router
-from aiogram.types import Message, Contact, ChatMemberUpdated
+from aiogram.types import Message
 from aiogram.filters import CommandStart
 
 from app.core.dispatcher import dp
@@ -8,9 +8,10 @@ from app.core.db import get_conn
 
 router = Router()
 
-# Vaqtincha memory storage
+# Vaqtincha xotiradagi storage
 GROUPS: dict[str, set[int]] = {}
 USERS: dict[str, dict[str, int]] = {}
+
 
 @router.message(CommandStart())
 async def start_handler(message: Message):
@@ -19,48 +20,60 @@ async def start_handler(message: Message):
         "Telefonni yuborish uchun tugmani bosing."
     )
 
+
 @router.message()
 async def group_detect(message: Message):
+    # faqat guruhlarda saqlaymiz
     if message.chat.type in ("group", "supergroup"):
         account = _get_account_code(message)
         GROUPS.setdefault(account, set()).add(message.chat.id)
 
-@router.message(lambda m: m.contact is not None or (m.text is not None and any(ch.isdigit() for ch in m.text)))
-async def contact_handler(message: Message):
-    # faqat shaxsiy chatda qabul qilamiz
+
+# 1) Contact yuborilgan bo'lsa
+@router.message(lambda m: m.contact is not None)
+async def contact_from_button(message: Message):
     if message.chat.type != "private":
         return
 
     account = _get_account_code(message)
-
-    # 1) Agar Contact yuborilgan bo‘lsa
-    if message.contact is not None:
-        raw_phone = message.contact.phone_number
-    # 2) Agar oddiy matn yuborilgan bo‘lsa
-    else:
-        raw_phone = message.text
-
+    raw_phone = message.contact.phone_number
     phone = normalize_phone(raw_phone)
 
-    # xotira (oldingi logika)
-    USERS.setdefault(account, {})[phone] = message.from_user.id
+    _save_phone(account, phone, message.from_user.id)
+    await message.answer("✅ Telefon saqlandi (contact)")
 
-    # DB ga yozamiz
+
+# 2) Oddiy matn bilan raqam yozilgan bo'lsa
+@router.message(lambda m: m.text is not None and any(ch.isdigit() for ch in m.text))
+async def contact_from_text(message: Message):
+    if message.chat.type != "private":
+        return
+
+    account = _get_account_code(message)
+    raw_phone = message.text
+    phone = normalize_phone(raw_phone)
+
+    _save_phone(account, phone, message.from_user.id)
+    await message.answer("✅ Telefon saqlandi (matn)")
+
+
+def _save_phone(account: str, phone: str, user_id: int):
+    # xotirada
+    USERS.setdefault(account, {})[phone] = user_id
+
+    # DB da
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(
         "INSERT OR IGNORE INTO users (id, phone) VALUES (?, ?)",
-        (message.from_user.id, phone)
+        (user_id, phone)
     )
     conn.commit()
     conn.close()
 
-    await message.answer("✅ Telefon saqlandi")
-
 
 def _get_account_code(message: Message) -> str:
     # Hozircha bitta test account
-    # Later: router orqali keladi
     return "test"
 
 
