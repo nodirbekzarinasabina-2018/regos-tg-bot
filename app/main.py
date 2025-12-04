@@ -13,6 +13,7 @@ def health():
 
 
 # Routers
+app.include_router(admin_router)
 app.include_router(telegram_router)
 app.include_router(regos_router)
 from app.core.db import init_db
