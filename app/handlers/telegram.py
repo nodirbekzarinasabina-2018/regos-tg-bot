@@ -2,8 +2,8 @@ from aiogram import Router
 from aiogram.types import Message, Contact, ChatMemberUpdated
 from aiogram.filters import CommandStart
 
-from core.dispatcher import dp
-from utils.helpers import normalize_phone
+from app.core.dispatcher import dp
+from app.utils.helpers import normalize_phone
 
 router = Router()
 
