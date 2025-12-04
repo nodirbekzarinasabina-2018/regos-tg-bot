@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
-from routers.telegram import router as telegram_router
-from routers.regos import router as regos_router
+from app.routers.telegram import router as telegram_router
+from app.routers.regos import router as regos_router
 
 app = FastAPI(title="Regos Multi Bot", version="1.0.0")
 
