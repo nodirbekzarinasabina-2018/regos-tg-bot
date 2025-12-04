@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.routers.admin import router as admin_router
 from app.routers.telegram import router as telegram_router
 from app.routers.regos import router as regos_router
 
