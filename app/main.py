@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, HTTPException
-from aiogram import Dispatcher, F
+from aiogram import Dispatcher
 from aiogram.types import Update, Message
 
 from app.bot_manager import get_bot
