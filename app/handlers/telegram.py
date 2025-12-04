@@ -25,7 +25,20 @@ async def start_handler(message: Message):
 @router.message(lambda m: m.chat.type in ("group", "supergroup"))
 async def group_detect(message: Message):
     account = _get_account_code(message)
-    GROUPS.setdefault(account, set()).add(message.chat.id)
+    group_id = message.chat.id
+
+    GROUPS.setdefault(account, set()).add(group_id)
+
+    # DB ga yozish
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT OR IGNORE INTO groups (id) VALUES (?)",
+        (group_id,)
+    )
+    conn.commit()
+    conn.close()
+
 
 
 # Shaxsiy chatdagi BARCHA matnlar / contactlar – telefonga hisoblanadi
