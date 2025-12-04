@@ -37,3 +37,10 @@ def list_accounts():
     rows = cur.fetchall()
     conn.close()
     return rows
+from app.core.bot_manager import reload_bots
+
+
+@router.post("/reload")
+def reload_tokens():
+    reload_bots()
+    return {"ok": True}
