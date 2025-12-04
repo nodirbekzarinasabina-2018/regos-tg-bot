@@ -31,3 +31,5 @@ def get_bot(account_code: str) -> Bot | None:
     bot = Bot(token=bot_token)
     _BOTS[account_code] = bot
     return bot
+def reload_bots():
+    _BOTS.clear()
