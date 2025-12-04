@@ -1,15 +1,33 @@
 from aiogram import Bot
-from app.config.settings import settings
 
-_bots: dict[str, Bot] = {}
+from app.core.db import get_conn
+
+# account_code -> Bot mapping
+_BOTS: dict[str, Bot] = {}
 
 
 def get_bot(account_code: str) -> Bot | None:
-    if account_code not in settings.accounts:
+    # avval cache’dan tekshiramiz
+    if account_code in _BOTS:
+        return _BOTS[account_code]
+
+    # DB’dan olamiz
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT bot_token, is_active FROM accounts WHERE account_code = ?",
+        (account_code,)
+    )
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
         return None
 
-    if account_code not in _bots:
-        token = settings.accounts[account_code].telegram_token
-        _bots[account_code] = Bot(token=token)
+    bot_token, is_active = row
+    if not is_active:
+        return None
 
-    return _bots[account_code]
+    bot = Bot(token=bot_token)
+    _BOTS[account_code] = bot
+    return bot
