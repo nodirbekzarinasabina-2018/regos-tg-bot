@@ -17,44 +17,43 @@ USERS: dict[str, dict[str, int]] = {}
 async def start_handler(message: Message):
     await message.answer(
         "✅ Bot ishlayapti.\n"
-        "Telefonni yuborish uchun tugmani bosing."
+        "Telefon raqamingizni shu yerga yozib yuboring (masalan, 998901234567)."
     )
 
 
-@router.message()
+# Guruhlardagi xabarlar uchun: faqat group id saqlaymiz
+@router.message(lambda m: m.chat.type in ("group", "supergroup"))
 async def group_detect(message: Message):
-    # faqat guruhlarda saqlaymiz
-    if message.chat.type in ("group", "supergroup"):
-        account = _get_account_code(message)
-        GROUPS.setdefault(account, set()).add(message.chat.id)
+    account = _get_account_code(message)
+    GROUPS.setdefault(account, set()).add(message.chat.id)
 
 
-# 1) Contact yuborilgan bo'lsa
-@router.message(lambda m: m.contact is not None)
-async def contact_from_button(message: Message):
+# Shaxsiy chatdagi BARCHA matnlar / contactlar – telefonga hisoblanadi
+@router.message()
+async def phone_handler(message: Message):
+    # faqat private chat
     if message.chat.type != "private":
         return
 
-    account = _get_account_code(message)
-    raw_phone = message.contact.phone_number
-    phone = normalize_phone(raw_phone)
-
-    _save_phone(account, phone, message.from_user.id)
-    await message.answer("✅ Telefon saqlandi (contact)")
-
-
-# 2) Oddiy matn bilan raqam yozilgan bo'lsa
-@router.message(lambda m: m.text is not None and any(ch.isdigit() for ch in m.text))
-async def contact_from_text(message: Message):
-    if message.chat.type != "private":
+    # komandalarni ( /start ) e'tiborga olmaymiz
+    if message.text and message.text.startswith("/"):
         return
 
     account = _get_account_code(message)
-    raw_phone = message.text
+
+    # 1) Contact yuborilgan bo'lsa
+    if message.contact is not None:
+        raw_phone = message.contact.phone_number
+    # 2) Oddiy matn bo'lsa
+    elif message.text is not None:
+        raw_phone = message.text
+    else:
+        return
+
     phone = normalize_phone(raw_phone)
 
     _save_phone(account, phone, message.from_user.id)
-    await message.answer("✅ Telefon saqlandi (matn)")
+    await message.answer(f"✅ Telefon saqlandi: {phone}")
 
 
 def _save_phone(account: str, phone: str, user_id: int):
