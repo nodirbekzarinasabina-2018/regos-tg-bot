@@ -2,6 +2,7 @@ from aiogram import Router
 from aiogram.types import Message, Contact, ChatMemberUpdated
 from aiogram.filters import CommandStart
 
+from app.core.db import get_conn
 from app.core.dispatcher import dp
 from app.utils.helpers import normalize_phone
 
@@ -30,6 +31,17 @@ async def contact_handler(message: Message):
     phone = normalize_phone(message.contact.phone_number)
 
     USERS.setdefault(account, {})[phone] = message.from_user.id
+
+    # ✅ DB ga saqlash
+    from app.core.db import get_conn
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT OR IGNORE INTO users (id, phone) VALUES (?, ?)",
+        (message.from_user.id, phone)
+    )
+    conn.commit()
+    conn.close()
 
     await message.answer("✅ Telefon saqlandi")
 
