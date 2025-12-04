@@ -1,7 +1,7 @@
 # account_code -> bot_token
 ACCOUNTS = {
     # vaqtincha test uchun
-    # "test": "BOT_TOKEN_BU_YERGA",
+     "test": "8594792866:AAGVsoyLQH0SX3Wz7EQvV54Eqg7GwlOLXec",
 }
 
 # account_code -> group chat ids
