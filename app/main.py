@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException
-from aiogram import Dispatcher
-from aiogram.types import Update
+from aiogram import Dispatcher, F
+from aiogram.types import Update, Message
 
 from app.bot_manager import get_bot
 
@@ -11,6 +11,13 @@ dp = Dispatcher()
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# ❗ Oddiy test handler: har qanday xabarga javob beradi
+@dp.message()
+async def any_message(message: Message):
+    print("✅ Telegram xabar keldi:", message.chat.id, message.text)
+    await message.answer("✅ Bot ishlayapti, xabar keldi.")
 
 
 @app.post("/tg/{account_code}")
