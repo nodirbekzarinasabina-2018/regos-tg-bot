@@ -25,3 +25,10 @@ def init_db():
 
     conn.commit()
     conn.close()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS accounts (
+        account_code TEXT PRIMARY KEY,
+        bot_token TEXT NOT NULL,
+        is_active INTEGER DEFAULT 1
+    )
+    """)
