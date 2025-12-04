@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Request, HTTPException
 from aiogram.types import Update
 
-from core.bot_manager import get_bot
-from core.dispatcher import dp
-from handlers.telegram import register_telegram_handlers
+from app.core.bot_manager import get_bot
+from app.core.dispatcher import dp
+from app.handlers.telegram import register_telegram_handlers
 
 router = APIRouter(prefix="/tg", tags=["telegram"])
 
