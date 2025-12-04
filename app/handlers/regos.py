@@ -1,8 +1,8 @@
 from aiogram import Bot
 
-from utils.formatters import format_sale, format_payment
-from utils.helpers import normalize_phone
-from handlers.telegram import GROUPS, USERS
+from app.utils.formatters import format_sale, format_payment
+from app.utils.helpers import normalize_phone
+from app.handlers.telegram import GROUPS, USERS
 
 
 async def handle_regos_event(
