@@ -1,5 +1,5 @@
 from aiogram import Bot
-from config.settings import settings
+from app.config.settings import settings
 
 _bots: dict[str, Bot] = {}
 
