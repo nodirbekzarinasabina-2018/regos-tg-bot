@@ -1,26 +1,43 @@
-from aiogram import types
+from aiogram import Dispatcher, types
+from aiogram.filters import CommandStart
+
 from app.core.db import get_conn_for_account
+from app.utils.helpers import normalize_phone
 
 
-async def register_group(message: types.Message, account_code: str):
+def register_handlers(dp: Dispatcher, account_code: str):
     """
-    Bot gruppaga qo‘shilganda /start yozilganda
-    group_id ni DB ga saqlaydi
+    Har bir bot uchun handlerlarni ro‘yxatdan o‘tkazamiz
     """
-    if not message.chat or message.chat.type not in ("group", "supergroup"):
-        return
 
-    group_id = message.chat.id
+    @dp.message(CommandStart())
+    async def start_handler(message: types.Message):
+        conn = get_conn_for_account(account_code)
+        cur = conn.cursor()
 
-    conn = get_conn_for_account(account_code)
-    cur = conn.cursor()
+        # ✅ GURUH / SUPERGURUH
+        if message.chat.type in ("group", "supergroup"):
+            cur.execute(
+                "INSERT OR IGNORE INTO groups (id) VALUES (?)",
+                (message.chat.id,)
+            )
+            conn.commit()
+            await message.reply("✅ Guruh ro‘yxatga olindi")
 
-    cur.execute(
-        "INSERT OR IGNORE INTO groups (id) VALUES (?)",
-        (group_id,)
-    )
+        # ✅ SHAXSIY CHAT
+        elif message.chat.type == "private":
+            user_id = message.from_user.id
 
-    conn.commit()
-    conn.close()
+            # Telegram phone majburiy bermaydi
+            phone = None
+            if message.from_user.username:
+                phone = normalize_phone(message.from_user.username)
 
-    await message.reply("✅ Guruh muvaffaqiyatli ro‘yxatga olindi")
+            cur.execute(
+                "INSERT OR IGNORE INTO users (id, phone) VALUES (?, ?)",
+                (user_id, phone)
+            )
+            conn.commit()
+            await message.reply("✅ Siz ro‘yxatdan o‘tdingiz")
+
+        conn.close()
