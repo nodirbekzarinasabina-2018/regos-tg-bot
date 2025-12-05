@@ -1,6 +1,6 @@
 from aiogram import Dispatcher, types
-from aiogram.filters import CommandStart
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.filters import CommandStart, Contact
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 
 from app.core.db import get_conn_for_account
 from app.utils.helpers import normalize_phone
@@ -13,17 +13,18 @@ def register_handlers(dp: Dispatcher, account_code: str):
         conn = get_conn_for_account(account_code)
         cur = conn.cursor()
 
+        # ✅ GURUH
         if message.chat.type in ("group", "supergroup"):
             cur.execute(
                 "INSERT OR IGNORE INTO groups (id) VALUES (?)",
                 (message.chat.id,)
             )
             conn.commit()
-            await message.reply("✅ Guruh ro‘yxatga olindi")
             conn.close()
+            await message.reply("✅ Guruh ro‘yxatga olindi")
             return
 
-        # ✅ SHAXSIY CHAT
+        # ✅ SHAXSIY CHAT → TELEFON SO‘RAYMIZ
         kb = ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="📞 Telefon raqamni yuborish", request_contact=True)]
@@ -32,16 +33,16 @@ def register_handlers(dp: Dispatcher, account_code: str):
             one_time_keyboard=True
         )
 
+        conn.close()
         await message.answer(
             "Davom etish uchun telefon raqamingizni yuboring 👇",
             reply_markup=kb
         )
 
-        conn.close()
-    @dp.message(lambda m: m.contact is not None)
+    # ✅ CONTACT HANDLER (TO‘G‘RI FILTER)
+    @dp.message(Contact())
     async def contact_handler(message: types.Message):
-        contact = message.contact
-        phone = normalize_phone(contact.phone_number)
+        phone = normalize_phone(message.contact.phone_number)
 
         conn = get_conn_for_account(account_code)
         cur = conn.cursor()
@@ -56,5 +57,5 @@ def register_handlers(dp: Dispatcher, account_code: str):
 
         await message.answer(
             "✅ Telefon raqamingiz saqlandi",
-            reply_markup=types.ReplyKeyboardRemove()
+            reply_markup=ReplyKeyboardRemove()
         )
