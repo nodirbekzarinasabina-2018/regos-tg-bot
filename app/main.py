@@ -1,23 +1,15 @@
 from fastapi import FastAPI
 
-from app.routers.admin import router as admin_router
-from app.routers.telegram import router as telegram_router
-from app.routers.regos import router as regos_router
+from app.routers import regos
+from app.core.db import init_all
 
-app = FastAPI(title="Regos Multi Bot", version="1.0.0")
+app = FastAPI(title="Regos Telegram Bots")
 
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-
-# Routers
-app.include_router(admin_router)
-app.include_router(telegram_router)
-app.include_router(regos_router)
-from app.core.db import init_db
-
+# ✅ APP STARTIDA DB’LARNI OCHIB OLAMIZ
 @app.on_event("startup")
-def startup():
-    init_db()
+async def on_startup():
+    init_all()
+
+
+# ✅ ROUTERLAR
+app.include_router(regos.router)
