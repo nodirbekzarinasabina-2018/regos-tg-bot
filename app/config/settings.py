@@ -1,12 +1,12 @@
-from pydantic import BaseModel
+from pydantic_settings import BaseSettings
 
 
-class Settings(BaseModel):
-    # keyinchalik qo‘shamiz:
-    # admin_username: str
-    # admin_password: str
-    # secret_key: str
-    pass
+class Settings(BaseSettings):
+    BOT1_TOKEN: str
+    BOT2_TOKEN: str
+
+    class Config:
+        env_file = ".env"
 
 
 settings = Settings()
