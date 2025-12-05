@@ -2,27 +2,25 @@ from aiogram import Bot
 
 from app.utils.formatters import format_sale, format_payment
 from app.utils.helpers import normalize_phone
-from app.handlers.telegram import GROUPS, USERS
-
 
 from app.core.bot_manager import get_bot
-from app.core.db import get_conn
+from app.core.db import get_conn_for_account
 
 
 async def handle_regos_event(account_code: str, payload: dict):
-    bot = get_bot(account_code)
+    bot: Bot = get_bot(account_code)
     if not bot:
         return
 
-    text = "🧾 REGOS HODISA\n\n" + str(payload)
+    text = _format_payload(payload)
 
-    conn = get_conn()
+    # ✅ HR ACCOUNT UCHUN ALOHIDA DB CONNECTION
+    conn = get_conn_for_account(account_code)
     cur = conn.cursor()
 
     # ✅ FAQAT SHU ACCOUNT GURUHLARI
     cur.execute(
-        "SELECT id FROM groups WHERE account_code = ?",
-        (account_code,)
+        "SELECT id FROM groups"
     )
     groups = cur.fetchall()
 
@@ -32,9 +30,11 @@ async def handle_regos_event(account_code: str, payload: dict):
     # ✅ FAQAT SHU ACCOUNT USERI
     phone = payload.get("phone")
     if phone:
+        phone = normalize_phone(phone)
+
         cur.execute(
-            "SELECT id FROM users WHERE phone = ? AND account_code = ?",
-            (phone, account_code)
+            "SELECT id FROM users WHERE phone = ?",
+            (phone,)
         )
         user = cur.fetchone()
         if user:
