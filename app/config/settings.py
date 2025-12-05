@@ -2,10 +2,10 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    BOT1_TOKEN: str
-    BOT2_TOKEN: str
-    REGOS_URL: str
-   
+    bot1_token: str
+    bot2_token: str
+    regos_url: str   # ✅ KICHIK HARF (MUHIM!)
+
     class Config:
         env_file = ".env"
 
