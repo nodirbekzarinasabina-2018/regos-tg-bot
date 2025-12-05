@@ -27,3 +27,27 @@ async def regos_webhook(request: Request):
         return {"send": "A"}  # yuborishni keyin ulaymiz
     else:
         return {"send": "B"}
+from app.bot.sender import send_to_groups
+
+from main import bots  # botlar dict
+
+@router.post("/regos/webhook")
+async def regos_webhook(request: Request):
+    account = detect_account(request)
+    if not account:
+        raise HTTPException(status_code=401, detail="UNKNOWN REGOS")
+
+    data = await request.json()
+
+    text = (
+        "🧾 Yangi savdo\n"
+        f"ID: {data.get('id')}\n"
+        f"Summa: {data.get('total')}"
+    )
+
+    bundle = bots[account]
+    group_ids = bundle.db.get_groups()
+
+    await send_to_groups(bundle.bot, group_ids, text)
+
+    return {"status": "sent"}
