@@ -1,0 +1,39 @@
+services:
+  chust-optom-1-regos-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chust-optom-1-regos-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - coolify
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+      - traefik.http.middlewares.regos1-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.regos1-gzip.compress=true
+      - traefik.http.routers.regos1-http.entrypoints=http
+      - traefik.http.routers.regos1-http.rule=Host(`regos1.sabinam.uz`) && PathPrefix(`/`)
+      - traefik.http.routers.regos1-http.middlewares=regos1-redirect
+      - traefik.http.routers.regos1-http.service=regos1-service
+      - traefik.http.routers.regos1-https.entrypoints=https
+      - traefik.http.routers.regos1-https.rule=Host(`regos1.sabinam.uz`) && PathPrefix(`/`)
+      - traefik.http.routers.regos1-https.middlewares=regos1-gzip
+      - traefik.http.routers.regos1-https.service=regos1-service
+      - traefik.http.routers.regos1-https.tls=true
+      - traefik.http.routers.regos1-https.tls.certresolver=letsencrypt
+      - traefik.http.services.regos1-service.loadbalancer.server.port=8000
+
+networks:
+  coolify:
+    external: true
