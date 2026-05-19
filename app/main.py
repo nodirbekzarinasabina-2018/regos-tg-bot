@@ -254,6 +254,21 @@ def _preferred_wholesale_private_bot_key() -> str:
     return "wholesale"
 
 
+def _wholesale_admin_phones() -> list[str]:
+    phones: list[str] = []
+    seen: set[str] = set()
+
+    for raw_value in [settings.wholesale_admin_phone, "+998907400776"]:
+        for part in re.split(r"[,\n;]+", str(raw_value or "")):
+            phone = normalize_phone(extract_first_phone(part))
+            if not phone or phone in seen:
+                continue
+            seen.add(phone)
+            phones.append(phone)
+
+    return phones
+
+
 async def process_wholesale_performed(doc_id: int, *, bot_key: str = "wholesale") -> None:
     doc = await regos.get_doc_wholesale(doc_id)
     operations = await regos.get_wholesale_operations(doc_id)
@@ -278,7 +293,7 @@ async def process_wholesale_performed(doc_id: int, *, bot_key: str = "wholesale"
     )
 
     _, config, _ = _get_telegram_client(bot_key)
-    if settings.wholesale_payment_group_enabled and config.enabled and config.group_configured:
+    if config.enabled and config.group_configured:
         await _send_bundle(
             bot_key,
             config.group_chat_id,
@@ -288,18 +303,15 @@ async def process_wholesale_performed(doc_id: int, *, bot_key: str = "wholesale"
         )
     else:
         logger.info(
-            "To'lov groupga yuborilmadi. bot=%s group_enabled=%s group_configured=%s",
+            "Savdo groupga yuborilmadi. bot=%s group_enabled=%s group_configured=%s",
             bot_key,
             settings.wholesale_payment_group_enabled,
             config.group_configured,
         )
 
-    await _send_to_mapped_phones(
+    await _send_to_customer_if_mapped(
         bot_key,
-        [
-            _resolve_contact_phone(partner),
-            settings.wholesale_admin_phone,
-        ],
+        partner,
         pdf_bytes=pdf_bytes,
         caption=caption,
         filename=filename,
@@ -345,7 +357,7 @@ async def process_payment_performed(payment_id: int, *, bot_key: str = "wholesal
     )
 
     _, config, _ = _get_telegram_client(bot_key)
-    if config.enabled and config.group_configured:
+    if settings.wholesale_payment_group_enabled and config.enabled and config.group_configured:
         await _send_bundle(
             bot_key,
             config.group_chat_id,
@@ -354,11 +366,19 @@ async def process_payment_performed(payment_id: int, *, bot_key: str = "wholesal
             filename=filename,
         )
     else:
-        logger.info("Telegram group hali sozlanmagan. bot=%s", bot_key)
+        logger.info(
+            "To'lov groupga yuborilmadi. bot=%s group_enabled=%s group_configured=%s",
+            bot_key,
+            settings.wholesale_payment_group_enabled,
+            config.group_configured,
+        )
 
-    await _send_to_customer_if_mapped(
+    await _send_to_mapped_phones(
         bot_key,
-        partner,
+        [
+            _resolve_contact_phone(partner),
+            *_wholesale_admin_phones(),
+        ],
         pdf_bytes=pdf_bytes,
         caption=caption,
         filename=filename,
