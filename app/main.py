@@ -19,6 +19,7 @@ from app.message_builders import (
     build_retail_return_caption,
     build_retail_sale_caption,
     build_sale_caption,
+    build_sale_message,
     build_session_caption,
     build_wholesale_order_caption,
     build_wholesale_return_caption,
@@ -206,6 +207,21 @@ async def _send_to_customer_if_mapped(
     )
 
 
+async def _send_message_to_customer_if_mapped(
+    preferred_bot_key: str,
+    partner: dict[str, Any],
+    *,
+    text: str,
+    private_bot_key: str | None = None,
+) -> None:
+    await _send_message_to_mapped_phones(
+        preferred_bot_key,
+        [_resolve_contact_phone(partner)],
+        text=text,
+        private_bot_key=private_bot_key,
+    )
+
+
 async def _send_to_mapped_phones(
     preferred_bot_key: str,
     phones: list[str],
@@ -247,6 +263,39 @@ async def _send_to_mapped_phones(
         sent_chat_ids.add(chat_id)
 
 
+async def _send_message_to_mapped_phones(
+    preferred_bot_key: str,
+    phones: list[str],
+    *,
+    text: str,
+    private_bot_key: str | None = None,
+) -> None:
+    if not _any_telegram_enabled():
+        logger.info("Telegram hali sozlanmagan. Private matn yuborish o'tkazib yuborildi.")
+        return
+
+    target_bot_key = private_bot_key or preferred_bot_key
+    actual_bot_key, _, _ = _get_telegram_client(target_bot_key)
+    sent_chat_ids: set[int] = set()
+    seen_phones: set[str] = set()
+
+    for raw_phone in phones:
+        phone = normalize_phone(extract_first_phone(str(raw_phone or "")))
+        if not phone or phone in seen_phones:
+            continue
+        seen_phones.add(phone)
+
+        chat_id = storage.get_chat_id_by_phone(actual_bot_key, phone)
+        if not chat_id:
+            logger.info("Private chat_id topilmadi. bot=%s phone=%s", actual_bot_key, phone)
+            continue
+        if chat_id in sent_chat_ids:
+            continue
+
+        await _send_message(actual_bot_key, chat_id, text)
+        sent_chat_ids.add(chat_id)
+
+
 def _preferred_wholesale_private_bot_key() -> str:
     shared = settings.shared_bot_config()
     if shared.enabled:
@@ -282,6 +331,13 @@ async def process_wholesale_performed(doc_id: int, *, bot_key: str = "wholesale"
         total_debt = await regos.get_partner_current_balance(partner_id, firm_id or None)
 
     caption = build_sale_caption(doc=doc, timezone_name=settings.app_timezone)
+    sale_text = build_sale_message(
+        doc=doc,
+        operations=operations,
+        total_debt=total_debt,
+        timezone_name=settings.app_timezone,
+        support_phones=_wholesale_admin_phones(),
+    )
     company_part = _safe_filename_part((((doc.get("stock") or {}).get("firm") or {}).get("name") or "REGOS"))
     code_part = _safe_filename_part(str(doc.get("code") or doc.get("id") or "savdo"))
     filename = f"{company_part}_Savdo_{code_part}.pdf"
@@ -294,6 +350,7 @@ async def process_wholesale_performed(doc_id: int, *, bot_key: str = "wholesale"
 
     _, config, _ = _get_telegram_client(bot_key)
     if config.enabled and config.group_configured:
+        await _send_message(bot_key, config.group_chat_id, sale_text)
         await _send_bundle(
             bot_key,
             config.group_chat_id,
@@ -309,6 +366,12 @@ async def process_wholesale_performed(doc_id: int, *, bot_key: str = "wholesale"
             config.group_configured,
         )
 
+    await _send_message_to_customer_if_mapped(
+        bot_key,
+        partner,
+        text=sale_text,
+        private_bot_key=_preferred_wholesale_private_bot_key(),
+    )
     await _send_to_customer_if_mapped(
         bot_key,
         partner,
