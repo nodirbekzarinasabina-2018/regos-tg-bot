@@ -90,6 +90,17 @@ class Storage:
                 )
                 """
             )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS processed_documents (
+                    doc_kind TEXT NOT NULL,
+                    doc_id INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (doc_kind, doc_id)
+                )
+                """
+            )
             con.commit()
 
     def try_start_event(self, event_id: str, event_action: str) -> bool:
@@ -224,3 +235,31 @@ class Storage:
             if row is None:
                 return None
             return float(row[0])
+
+    def is_document_processed(self, doc_kind: str, doc_id: int) -> bool:
+        with self._connect() as con:
+            cur = con.execute(
+                """
+                SELECT status
+                FROM processed_documents
+                WHERE doc_kind = ? AND doc_id = ?
+                LIMIT 1
+                """,
+                (doc_kind, doc_id),
+            )
+            row = cur.fetchone()
+            return row is not None and str(row[0]) == "processed"
+
+    def mark_document_processed(self, doc_kind: str, doc_id: int) -> None:
+        with self._connect() as con:
+            con.execute(
+                """
+                INSERT INTO processed_documents (doc_kind, doc_id, status, updated_at)
+                VALUES (?, ?, 'processed', ?)
+                ON CONFLICT(doc_kind, doc_id) DO UPDATE SET
+                    status=excluded.status,
+                    updated_at=excluded.updated_at
+                """,
+                (doc_kind, doc_id, _utc_now_iso()),
+            )
+            con.commit()

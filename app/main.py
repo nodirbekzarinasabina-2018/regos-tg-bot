@@ -317,6 +317,7 @@ async def process_wholesale_performed(doc_id: int, *, bot_key: str = "wholesale"
         filename=filename,
         private_bot_key=_preferred_wholesale_private_bot_key(),
     )
+    storage.mark_document_processed("DocWholeSalePerformed", doc_id)
 
 
 async def process_payment_performed(payment_id: int, *, bot_key: str = "wholesale") -> None:
@@ -329,6 +330,7 @@ async def process_payment_performed(payment_id: int, *, bot_key: str = "wholesal
             payment_doc.get("code"),
             category.get("id"),
         )
+        storage.mark_document_processed("DocPaymentPerformed", payment_id)
         return
 
     partner = payment_doc.get("partner") or {}
@@ -384,6 +386,7 @@ async def process_payment_performed(payment_id: int, *, bot_key: str = "wholesal
         filename=filename,
         private_bot_key=_preferred_wholesale_private_bot_key(),
     )
+    storage.mark_document_processed("DocPaymentPerformed", payment_id)
 
 
 async def process_wholesale_return_performed(doc_id: int, *, bot_key: str = "wholesale") -> None:

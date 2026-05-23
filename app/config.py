@@ -89,6 +89,7 @@ class Settings(BaseSettings):
 
     storage_path: Path = Field(default=Path("./data/bot.db"), alias="STORAGE_PATH")
     temp_dir: Path = Field(default=Path("./data/tmp"), alias="TEMP_DIR")
+    runtime_override_path: Path = Field(default=Path("./data/runtime.env"), alias="RUNTIME_OVERRIDE_PATH")
 
     def shared_bot_config(self) -> TelegramBotConfig:
         return TelegramBotConfig(
@@ -160,6 +161,53 @@ class Settings(BaseSettings):
         return configs
 
 
+def _parse_bool(value: str) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _load_runtime_overrides(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+
+    result: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        result[key.strip()] = value.strip()
+    return result
+
+
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    overrides = _load_runtime_overrides(settings.runtime_override_path)
+    if not overrides:
+        return settings
+
+    alias_to_attr = {
+        "REGOS_INTEGRATION_KEY": "regos_integration_key",
+        "REGOS_CONNECTED_INTEGRATION_ID": "regos_connected_integration_id",
+        "REGOS_BASE_URL": "regos_base_url",
+        "REGOS_TIMEOUT_SECONDS": "regos_timeout_seconds",
+        "WHOLESALE_ADMIN_PHONE": "wholesale_admin_phone",
+        "WHOLESALE_PAYMENT_GROUP_ENABLED": "wholesale_payment_group_enabled",
+    }
+
+    for alias, attr_name in alias_to_attr.items():
+        if alias not in overrides:
+            continue
+        current_value = getattr(settings, attr_name)
+        raw_value = overrides[alias]
+        if isinstance(current_value, bool):
+            parsed_value = _parse_bool(raw_value)
+        elif isinstance(current_value, int):
+            parsed_value = int(raw_value)
+        elif isinstance(current_value, Path):
+            parsed_value = Path(raw_value)
+        else:
+            parsed_value = raw_value
+        setattr(settings, attr_name, parsed_value)
+
+    return settings
