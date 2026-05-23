@@ -20,6 +20,7 @@ from app.message_builders import (
     build_retail_sale_caption,
     build_sale_caption,
     build_sale_message,
+    resolve_wholesale_sale_amount,
     build_session_caption,
     build_wholesale_order_caption,
     build_wholesale_return_caption,
@@ -110,6 +111,13 @@ def _document_amount_to_base(amount: float, exchange_rate: float, currency: dict
     return float(amount or 0) * exchange_rate
 
 
+def _base_amount_to_doc_currency(amount_base: float, exchange_rate: float, currency: dict[str, Any] | None) -> float:
+    currency = currency or {}
+    if bool(currency.get("is_base")) or exchange_rate <= 0:
+        return float(amount_base or 0)
+    return float(amount_base or 0) / exchange_rate
+
+
 def _is_private_chat(message: dict[str, Any]) -> bool:
     chat = message.get("chat") or {}
     return str(chat.get("type") or "") == "private"
@@ -165,7 +173,49 @@ async def _send_message(
     if client is None:
         logger.info("Telegram client sozlanmagan. bot=%s", actual_bot_key)
         return
-    await client.send_message(chat_id, text, reply_markup=reply_markup)
+
+    chunks = _split_telegram_text(text)
+    for index, chunk in enumerate(chunks):
+        await client.send_message(
+            chat_id,
+            chunk,
+            reply_markup=reply_markup if index == 0 else None,
+        )
+
+
+def _split_telegram_text(text: str, max_length: int = 3500) -> list[str]:
+    if len(text) <= max_length:
+        return [text]
+
+    chunks: list[str] = []
+    current_lines: list[str] = []
+    current_length = 0
+
+    for raw_line in text.splitlines():
+        line = raw_line or ""
+        line_length = len(line) + (1 if current_lines else 0)
+        if current_lines and current_length + line_length > max_length:
+            chunks.append("\n".join(current_lines))
+            current_lines = [line]
+            current_length = len(line)
+            continue
+
+        if len(line) > max_length:
+            if current_lines:
+                chunks.append("\n".join(current_lines))
+                current_lines = []
+                current_length = 0
+            for start in range(0, len(line), max_length):
+                chunks.append(line[start : start + max_length])
+            continue
+
+        current_lines.append(line)
+        current_length += line_length
+
+    if current_lines:
+        chunks.append("\n".join(current_lines))
+
+    return chunks
 
 
 def _resolve_partner_phone(partner: dict[str, Any]) -> str:
@@ -330,11 +380,23 @@ async def process_wholesale_performed(doc_id: int, *, bot_key: str = "wholesale"
     if partner_id:
         total_debt = await regos.get_partner_current_balance(partner_id, firm_id or None)
 
-    caption = build_sale_caption(doc=doc, timezone_name=settings.app_timezone)
+    currency = doc.get("currency") or {}
+    exchange_rate = float(doc.get("exchange_rate") or 0.0)
+    sale_amount = resolve_wholesale_sale_amount(doc, operations)
+    total_debt_doc_currency = _base_amount_to_doc_currency(total_debt, exchange_rate, currency)
+    previous_debt_doc_currency = max(total_debt_doc_currency - sale_amount, 0.0)
+
+    caption = build_sale_caption(
+        doc=doc,
+        timezone_name=settings.app_timezone,
+        sale_amount=sale_amount,
+    )
     sale_text = build_sale_message(
         doc=doc,
         operations=operations,
-        total_debt=total_debt,
+        sale_amount=sale_amount,
+        previous_debt=previous_debt_doc_currency,
+        total_debt=total_debt_doc_currency,
         timezone_name=settings.app_timezone,
     )
     company_part = _safe_filename_part((((doc.get("stock") or {}).get("firm") or {}).get("name") or "REGOS"))

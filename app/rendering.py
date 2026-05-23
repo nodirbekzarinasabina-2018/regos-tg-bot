@@ -15,7 +15,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 
 from app.config import get_settings
 from app.formatting import unix_to_local
-from app.message_builders import _person_name
+from app.message_builders import _person_name, resolve_wholesale_sale_amount
 
 
 def _wrap_lines(text: str, max_chars: int = 52) -> list[str]:
@@ -499,7 +499,7 @@ def render_sale_pdf(
     currency = doc.get("currency") or {}
     currency_code = str(currency.get("code_chr") or "UZS")
     exchange_rate = float(doc.get("exchange_rate") or 0)
-    amount = float(doc.get("amount") or 0)
+    amount = resolve_wholesale_sale_amount(doc, operations)
     total_debt_doc_currency = _convert_base_to_doc_currency(total_debt_base, exchange_rate, currency)
     previous_debt_doc_currency = max(total_debt_doc_currency - amount, 0)
 

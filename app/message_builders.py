@@ -53,6 +53,19 @@ def _normalize_display_phone(value: str) -> str:
     return phone or "-"
 
 
+def resolve_wholesale_sale_amount(
+    doc: dict[str, Any],
+    operations: list[dict[str, Any]],
+) -> float:
+    operations_total = sum(
+        float(op.get("quantity") or 0) * float(op.get("price") or 0)
+        for op in operations
+    )
+    if operations_total > 0:
+        return operations_total
+    return float(doc.get("amount") or 0)
+
+
 def _append_support_lines(
     lines: list[str],
     *,
@@ -74,11 +87,12 @@ def build_sale_message(
     *,
     doc: dict[str, Any],
     operations: list[dict[str, Any]],
+    sale_amount: float,
+    previous_debt: float,
     total_debt: float,
     timezone_name: str,
     support_phones: list[str] | None = None,
     support_telegram: str | None = None,
-    max_items: int = 15,
 ) -> str:
     code = doc.get("code") or f"ID-{doc.get('id', '-')}"
     date_text = unix_to_local(int(doc.get("date") or 0), timezone_name)
@@ -86,7 +100,6 @@ def build_sale_message(
     partner_name = partner.get("name") or partner.get("full_name") or "Noma'lum"
     partner_phone = _normalize_display_phone(partner.get("main_phone") or partner.get("phones") or "")
     actor = _person_name(doc.get("attached_user")) or _person_name(doc.get("seller")) or "Noma'lum"
-    amount = float(doc.get("amount") or 0)
 
     lines = [
         "XARID QILINDI",
@@ -101,8 +114,7 @@ def build_sale_message(
     ]
 
     if operations:
-        visible_operations = operations[:max_items]
-        for idx, op in enumerate(visible_operations, start=1):
+        for idx, op in enumerate(operations, start=1):
             item = op.get("item") or {}
             item_name = _item_name(item)
             quantity = float(op.get("quantity") or 0)
@@ -111,17 +123,14 @@ def build_sale_message(
             lines.append(
                 f"{idx}) {item_name} {_format_quantity(quantity)} x {format_money(price)} = {format_money(row_total)}"
             )
-
-        remaining_count = len(operations) - len(visible_operations)
-        if remaining_count > 0:
-            lines.append(f"... yana {remaining_count} ta mahsulot")
     else:
         lines.append("1) Pozitsiyalar topilmadi")
 
     lines.extend(
         [
             "",
-            f"Jami: {format_money(amount)}",
+            f"Jami: {format_money(sale_amount)}",
+            f"Eski qarz: {format_money(previous_debt)}",
             f"Umumiy qarz: {format_money(total_debt)}",
         ]
     )
@@ -133,14 +142,19 @@ def build_sale_message(
     return "\n".join(lines)
 
 
-def build_sale_caption(*, doc: dict[str, Any], timezone_name: str) -> str:
+def build_sale_caption(
+    *,
+    doc: dict[str, Any],
+    timezone_name: str,
+    sale_amount: float | None = None,
+) -> str:
     code = doc.get("code") or f"ID-{doc.get('id', '-')}"
     partner = doc.get("partner") or {}
     partner_name = partner.get("name") or partner.get("full_name") or "Noma'lum"
     date_text = unix_to_local(int(doc.get("date") or 0), timezone_name).replace(" ", ", ")
     currency = doc.get("currency") or {}
     currency_code = str(currency.get("code_chr") or "UZS")
-    amount = float(doc.get("amount") or 0)
+    amount = float(doc.get("amount") or 0) if sale_amount is None else float(sale_amount or 0)
 
     return "\n".join(
         [
