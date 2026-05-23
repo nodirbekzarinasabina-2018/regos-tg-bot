@@ -472,7 +472,7 @@ def render_sale_pdf(
     *,
     doc: dict[str, Any],
     operations: list[dict[str, Any]],
-    total_debt_base: float,
+    previous_debt_base: float,
     timezone_name: str,
 ) -> bytes:
     _register_fonts()
@@ -500,8 +500,8 @@ def render_sale_pdf(
     currency_code = str(currency.get("code_chr") or "UZS")
     exchange_rate = float(doc.get("exchange_rate") or 0)
     amount = resolve_wholesale_sale_amount(doc, operations)
-    total_debt_doc_currency = _convert_base_to_doc_currency(total_debt_base, exchange_rate, currency)
-    previous_debt_doc_currency = max(total_debt_doc_currency - amount, 0)
+    previous_debt_doc_currency = _convert_base_to_doc_currency(previous_debt_base, exchange_rate, currency)
+    total_debt_doc_currency = previous_debt_doc_currency + amount
 
     story = []
     story.extend(_build_header_block(company_name, stock_name, doc_code, doc_date, styles))

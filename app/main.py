@@ -376,15 +376,17 @@ async def process_wholesale_performed(doc_id: int, *, bot_key: str = "wholesale"
     firm = doc.get("firm") or {}
     partner_id = _safe_int(partner.get("id"))
     firm_id = _safe_int(firm.get("id"))
-    total_debt = 0.0
+    total_debt_base = 0.0
     if partner_id:
-        total_debt = await regos.get_partner_current_balance(partner_id, firm_id or None)
+        total_debt_base = await regos.get_partner_current_balance(partner_id, firm_id or None)
 
     currency = doc.get("currency") or {}
     exchange_rate = float(doc.get("exchange_rate") or 0.0)
     sale_amount = resolve_wholesale_sale_amount(doc, operations)
-    total_debt_doc_currency = _base_amount_to_doc_currency(total_debt, exchange_rate, currency)
-    previous_debt_doc_currency = max(total_debt_doc_currency - sale_amount, 0.0)
+    sale_amount_base = _document_amount_to_base(sale_amount, exchange_rate, currency)
+    previous_debt_base = max(total_debt_base - sale_amount_base, 0.0)
+    previous_debt_doc_currency = _base_amount_to_doc_currency(previous_debt_base, exchange_rate, currency)
+    total_debt_doc_currency = previous_debt_doc_currency + sale_amount
 
     caption = build_sale_caption(
         doc=doc,
@@ -405,7 +407,7 @@ async def process_wholesale_performed(doc_id: int, *, bot_key: str = "wholesale"
     pdf_bytes = render_sale_pdf(
         doc=doc,
         operations=operations,
-        total_debt_base=total_debt,
+        previous_debt_base=previous_debt_base,
         timezone_name=settings.app_timezone,
     )
 
