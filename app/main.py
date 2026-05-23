@@ -336,7 +336,6 @@ async def process_wholesale_performed(doc_id: int, *, bot_key: str = "wholesale"
         operations=operations,
         total_debt=total_debt,
         timezone_name=settings.app_timezone,
-        support_phones=_wholesale_admin_phones(),
     )
     company_part = _safe_filename_part((((doc.get("stock") or {}).get("firm") or {}).get("name") or "REGOS"))
     code_part = _safe_filename_part(str(doc.get("code") or doc.get("id") or "savdo"))
