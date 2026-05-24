@@ -370,6 +370,16 @@ def _wholesale_admin_phones() -> list[str]:
 
 async def process_wholesale_performed(doc_id: int, *, bot_key: str = "wholesale") -> None:
     doc = await regos.get_doc_wholesale(doc_id)
+    if doc.get("performed") is not True:
+        logger.info(
+            "Savdo hali pravodka/tasdiqdan o'tmagan. id=%s code=%s performed=%s blocked=%s",
+            doc_id,
+            doc.get("code"),
+            doc.get("performed"),
+            doc.get("blocked"),
+        )
+        return
+
     operations = await regos.get_wholesale_operations(doc_id)
 
     partner = doc.get("partner") or {}
