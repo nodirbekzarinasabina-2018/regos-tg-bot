@@ -357,7 +357,7 @@ def _wholesale_admin_phones() -> list[str]:
     phones: list[str] = []
     seen: set[str] = set()
 
-    for raw_value in [settings.wholesale_admin_phone, "+998907400776"]:
+    for raw_value in [settings.wholesale_admin_phone]:
         for part in re.split(r"[,\n;]+", str(raw_value or "")):
             phone = normalize_phone(extract_first_phone(part))
             if not phone or phone in seen:
