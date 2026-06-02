@@ -200,6 +200,10 @@ def _thermal_text_block(text: str, style_name: str) -> dict[str, Any]:
     return {"type": "text", "style": style_name, "text": text}
 
 
+def _thermal_item_block(item_text: str, detail_text: str) -> dict[str, Any]:
+    return {"type": "item", "item_text": item_text, "detail_text": detail_text}
+
+
 def _thermal_separator_block() -> dict[str, Any]:
     return {"type": "separator"}
 
@@ -224,6 +228,39 @@ def _thermal_render_blocks(blocks: list[dict[str, Any]]) -> bytes:
             prepared_blocks.append({"type": "text", "style": style_name, "lines": lines})
             total_height += block_height
             continue
+        if block_type == "item":
+            body_style = _THERMAL_STYLES["body"]
+            meta_style = _THERMAL_STYLES["meta"]
+            item_text = str(block["item_text"])
+            detail_text = str(block["detail_text"])
+            single_line_text = f"{item_text}  {detail_text}"
+            fits_single_line = (
+                pdfmetrics.stringWidth(
+                    single_line_text,
+                    str(body_style["font_name"]),
+                    float(body_style["font_size"]),
+                )
+                <= _THERMAL_CONTENT_WIDTH
+            )
+            prepared_blocks.append(
+                {
+                    "type": "item",
+                    "single_line": fits_single_line,
+                    "item_text": item_text,
+                    "detail_text": detail_text,
+                    "item_font_name": str(body_style["font_name"]),
+                    "item_font_size": float(body_style["font_size"]),
+                    "item_leading": float(body_style["leading"]),
+                    "detail_font_name": str(meta_style["font_name"]),
+                    "detail_font_size": float(meta_style["font_size"]),
+                    "detail_leading": float(meta_style["leading"]),
+                    "space_after": 2.2,
+                }
+            )
+            total_height += float(body_style["leading"]) + 2.2
+            if not fits_single_line:
+                total_height += float(meta_style["leading"])
+            continue
         if block_type == "separator":
             prepared_blocks.append(block)
             total_height += _THERMAL_SEPARATOR_GAP
@@ -243,12 +280,30 @@ def _thermal_render_blocks(blocks: list[dict[str, Any]]) -> bytes:
         block_type = block["type"]
         if block_type == "separator":
             y -= _THERMAL_SEPARATOR_GAP / 2
-            pdf.setLineWidth(0.8)
+            pdf.setLineWidth(1.2)
             pdf.line(_THERMAL_MARGIN_X, y, _THERMAL_PAGE_WIDTH - _THERMAL_MARGIN_X, y)
             y -= _THERMAL_SEPARATOR_GAP / 2
             continue
         if block_type == "spacer":
             y -= float(block["size"])
+            continue
+        if block_type == "item":
+            if bool(block["single_line"]):
+                y -= float(block["item_leading"])
+                pdf.setFont(str(block["item_font_name"]), float(block["item_font_size"]))
+                pdf.drawString(
+                    _THERMAL_MARGIN_X,
+                    y,
+                    f"{block['item_text']}  {block['detail_text']}",
+                )
+            else:
+                y -= float(block["item_leading"])
+                pdf.setFont(str(block["item_font_name"]), float(block["item_font_size"]))
+                pdf.drawString(_THERMAL_MARGIN_X, y, str(block["item_text"]))
+                y -= float(block["detail_leading"])
+                pdf.setFont(str(block["detail_font_name"]), float(block["detail_font_size"]))
+                pdf.drawString(_THERMAL_MARGIN_X, y, str(block["detail_text"]))
+            y -= float(block["space_after"])
             continue
 
         style = _THERMAL_STYLES[str(block["style"])]
@@ -715,11 +770,11 @@ def render_sale_pdf(
             quantity = float(op.get("quantity") or 0)
             price = float(op.get("price") or 0)
             row_total = quantity * price
-            row_text = (
-                f"{index}. {item_name} | "
-                f"{_thermal_quantity(quantity)}x{format_money(price)}={format_money(row_total)}"
+            item_text = f"{index}. {item_name}"
+            detail_text = (
+                f"{_thermal_quantity(quantity)} x {format_money(price)} = {format_money(row_total)}"
             )
-            blocks.append(_thermal_text_block(row_text, "body"))
+            blocks.append(_thermal_item_block(item_text, detail_text))
             if index < len(operations):
                 blocks.append(_thermal_separator_block())
     else:
