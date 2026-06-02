@@ -715,15 +715,13 @@ def render_sale_pdf(
             quantity = float(op.get("quantity") or 0)
             price = float(op.get("price") or 0)
             row_total = quantity * price
-            blocks.extend(
-                [
-                    _thermal_text_block(f"{index}. {item_name}", "body"),
-                    _thermal_text_block(
-                        f"   {_thermal_quantity(quantity)} x {format_money(price)} = {format_money(row_total)}",
-                        "meta",
-                    ),
-                ]
+            row_text = (
+                f"{index}. {item_name} | "
+                f"{_thermal_quantity(quantity)}x{format_money(price)}={format_money(row_total)}"
             )
+            blocks.append(_thermal_text_block(row_text, "body"))
+            if index < len(operations):
+                blocks.append(_thermal_separator_block())
     else:
         blocks.append(_thermal_text_block("Pozitsiyalar topilmadi", "body"))
 
