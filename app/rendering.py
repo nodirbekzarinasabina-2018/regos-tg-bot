@@ -11,10 +11,11 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.config import get_settings
-from app.formatting import unix_to_local
+from app.formatting import format_money, unix_to_local
 from app.message_builders import _person_name, resolve_wholesale_sale_amount
 
 
@@ -62,29 +63,227 @@ def render_png_from_text(text: str) -> bytes:
 
 
 def render_pdf_from_text(text: str) -> bytes:
-    output = BytesIO()
-    c = SimpleDocTemplate(
-        output,
-        pagesize=A4,
-        leftMargin=18 * mm,
-        rightMargin=18 * mm,
-        topMargin=18 * mm,
-        bottomMargin=18 * mm,
-    )
-    _register_fonts()
-    styles = _pdf_styles()
+    blocks = [_thermal_text_block(_brand_name(), "brand")]
+    if text.strip():
+        blocks.extend(
+            [
+                _thermal_separator_block(),
+                _thermal_text_block(text, "body"),
+            ]
+        )
+    return _thermal_render_blocks(blocks)
 
-    story = []
-    for line in text.splitlines():
-        wrapped = _wrap_lines(line, max_chars=95) if line.strip() else [""]
-        for sub_line in wrapped:
-            if sub_line.strip():
-                story.append(Paragraph(_escape(sub_line), styles["body"]))
+
+_THERMAL_PAGE_WIDTH = 80 * mm
+_THERMAL_MARGIN_X = 4 * mm
+_THERMAL_MARGIN_Y = 4 * mm
+_THERMAL_CONTENT_WIDTH = _THERMAL_PAGE_WIDTH - (_THERMAL_MARGIN_X * 2)
+_THERMAL_SEPARATOR_GAP = 6
+
+_THERMAL_STYLES: dict[str, dict[str, Any]] = {
+    "brand": {
+        "font_name": "RegosSansBold",
+        "font_size": 12.5,
+        "leading": 14.5,
+        "align": "center",
+        "space_after": 2.5,
+    },
+    "subtitle": {
+        "font_name": "RegosSans",
+        "font_size": 8.2,
+        "leading": 10.2,
+        "align": "center",
+        "space_after": 2.5,
+    },
+    "title": {
+        "font_name": "RegosSansBold",
+        "font_size": 10.5,
+        "leading": 12.5,
+        "align": "center",
+        "space_after": 3.0,
+    },
+    "section": {
+        "font_name": "RegosSansBold",
+        "font_size": 9.2,
+        "leading": 11.4,
+        "align": "left",
+        "space_after": 1.5,
+    },
+    "body": {
+        "font_name": "RegosSans",
+        "font_size": 8.6,
+        "leading": 10.8,
+        "align": "left",
+        "space_after": 1.2,
+    },
+    "strong": {
+        "font_name": "RegosSansBold",
+        "font_size": 9.2,
+        "leading": 11.6,
+        "align": "left",
+        "space_after": 1.5,
+    },
+    "total": {
+        "font_name": "RegosSansBold",
+        "font_size": 10.2,
+        "leading": 12.8,
+        "align": "left",
+        "space_after": 1.8,
+    },
+    "meta": {
+        "font_name": "RegosSans",
+        "font_size": 7.8,
+        "leading": 9.6,
+        "align": "left",
+        "space_after": 1.0,
+    },
+}
+
+
+def _thermal_wrap_text(text: str, font_name: str, font_size: float, max_width: float) -> list[str]:
+    text = str(text or "").strip()
+    if not text:
+        return [""]
+
+    def split_token(token: str) -> list[str]:
+        if pdfmetrics.stringWidth(token, font_name, font_size) <= max_width:
+            return [token]
+
+        parts: list[str] = []
+        current = ""
+        for char in token:
+            candidate = f"{current}{char}"
+            if current and pdfmetrics.stringWidth(candidate, font_name, font_size) > max_width:
+                parts.append(current)
+                current = char
             else:
-                story.append(Spacer(1, 4))
+                current = candidate
+        if current:
+            parts.append(current)
+        return parts or [token]
 
-    c.build(story)
+    lines: list[str] = []
+    current = ""
+    for raw_word in text.split():
+        for word in split_token(raw_word):
+            candidate = f"{current} {word}".strip()
+            if current and pdfmetrics.stringWidth(candidate, font_name, font_size) > max_width:
+                lines.append(current)
+                current = word
+            else:
+                current = candidate
+    if current:
+        lines.append(current)
+    return lines or [text]
+
+
+def _thermal_prepare_text(text: str, style_name: str) -> list[str]:
+    style = _THERMAL_STYLES[style_name]
+    prepared: list[str] = []
+    for raw_line in str(text or "").splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            prepared.append("")
+            continue
+        prepared.extend(
+            _thermal_wrap_text(
+                stripped,
+                style["font_name"],
+                style["font_size"],
+                _THERMAL_CONTENT_WIDTH,
+            )
+        )
+    return prepared or [""]
+
+
+def _thermal_text_block(text: str, style_name: str) -> dict[str, Any]:
+    return {"type": "text", "style": style_name, "text": text}
+
+
+def _thermal_separator_block() -> dict[str, Any]:
+    return {"type": "separator"}
+
+
+def _thermal_spacer_block(size: float = 4.0) -> dict[str, Any]:
+    return {"type": "spacer", "size": float(size)}
+
+
+def _thermal_render_blocks(blocks: list[dict[str, Any]]) -> bytes:
+    _register_fonts()
+
+    prepared_blocks: list[dict[str, Any]] = []
+    total_height = _THERMAL_MARGIN_Y * 2
+
+    for block in blocks:
+        block_type = block["type"]
+        if block_type == "text":
+            style_name = str(block["style"])
+            style = _THERMAL_STYLES[style_name]
+            lines = _thermal_prepare_text(str(block["text"]), style_name)
+            block_height = (len(lines) * float(style["leading"])) + float(style["space_after"])
+            prepared_blocks.append({"type": "text", "style": style_name, "lines": lines})
+            total_height += block_height
+            continue
+        if block_type == "separator":
+            prepared_blocks.append(block)
+            total_height += _THERMAL_SEPARATOR_GAP
+            continue
+        size = float(block.get("size") or 0)
+        prepared_blocks.append({"type": "spacer", "size": size})
+        total_height += size
+
+    page_height = max(total_height + 2, 100 * mm)
+    output = BytesIO()
+    pdf = canvas.Canvas(output, pagesize=(_THERMAL_PAGE_WIDTH, page_height))
+    pdf.setAuthor(_brand_name())
+    pdf.setTitle("Receipt")
+
+    y = page_height - _THERMAL_MARGIN_Y
+    for block in prepared_blocks:
+        block_type = block["type"]
+        if block_type == "separator":
+            y -= _THERMAL_SEPARATOR_GAP / 2
+            pdf.setLineWidth(0.8)
+            pdf.line(_THERMAL_MARGIN_X, y, _THERMAL_PAGE_WIDTH - _THERMAL_MARGIN_X, y)
+            y -= _THERMAL_SEPARATOR_GAP / 2
+            continue
+        if block_type == "spacer":
+            y -= float(block["size"])
+            continue
+
+        style = _THERMAL_STYLES[str(block["style"])]
+        pdf.setFont(str(style["font_name"]), float(style["font_size"]))
+        for line in block["lines"]:
+            y -= float(style["leading"])
+            if not line:
+                continue
+            text_width = pdfmetrics.stringWidth(line, str(style["font_name"]), float(style["font_size"]))
+            align = str(style["align"])
+            if align == "center":
+                x = (_THERMAL_PAGE_WIDTH - text_width) / 2
+            elif align == "right":
+                x = _THERMAL_PAGE_WIDTH - _THERMAL_MARGIN_X - text_width
+            else:
+                x = _THERMAL_MARGIN_X
+            pdf.drawString(x, y, line)
+        y -= float(style["space_after"])
+
+    pdf.showPage()
+    pdf.save()
     return output.getvalue()
+
+
+def _thermal_money(amount: float, currency_code: str) -> str:
+    if currency_code == "UZS":
+        return f"{format_money(amount)} so'm"
+    return f"{_format_currency_value(amount)} {currency_code}"
+
+
+def _thermal_quantity(quantity: float) -> str:
+    rounded = round(float(quantity or 0), 3)
+    if abs(rounded - int(rounded)) < 0.001:
+        return str(int(round(rounded)))
+    return f"{rounded:,.3f}".replace(",", " ").rstrip("0").rstrip(".")
 
 
 def render_inventory_snapshot_pdf(
@@ -475,19 +674,6 @@ def render_sale_pdf(
     previous_debt_base: float,
     timezone_name: str,
 ) -> bytes:
-    _register_fonts()
-    styles = _pdf_styles()
-
-    output = BytesIO()
-    pdf = SimpleDocTemplate(
-        output,
-        pagesize=A4,
-        leftMargin=16 * mm,
-        rightMargin=16 * mm,
-        topMargin=14 * mm,
-        bottomMargin=14 * mm,
-    )
-
     company_name = _extract_company_name(doc)
     stock_name = _extract_stock_name(doc)
     actor_name = _person_name(doc.get("attached_user")) or _person_name(doc.get("seller")) or "Noma'lum"
@@ -503,32 +689,54 @@ def render_sale_pdf(
     previous_debt_doc_currency = _convert_base_to_doc_currency(previous_debt_base, exchange_rate, currency)
     total_debt_doc_currency = previous_debt_doc_currency + amount
 
-    story = []
-    story.extend(_build_header_block(company_name, stock_name, doc_code, doc_date, styles))
-    story.extend(
-        _build_info_section(
-            "MIJOZ MA'LUMOTLARI",
-            [
-                ("Nomi", partner_name, "Tel", str(partner_phone)),
-                ("Ombor", stock_name, "Amalni bajargan", actor_name),
-            ],
-            styles,
-        )
+    blocks: list[dict[str, Any]] = [
+        _thermal_text_block(company_name, "brand"),
+    ]
+    if stock_name and stock_name != "-":
+        blocks.append(_thermal_text_block(stock_name, "subtitle"))
+    blocks.extend(
+        [
+            _thermal_text_block("SAVDO CHEKI", "title"),
+            _thermal_separator_block(),
+            _thermal_text_block(f"Kod: {doc_code}", "strong"),
+            _thermal_text_block(f"Sana: {doc_date}", "body"),
+            _thermal_text_block(f"Mijoz: {partner_name}", "body"),
+            _thermal_text_block(f"Tel: {partner_phone}", "body"),
+            _thermal_text_block(f"Sotuvchi: {actor_name}", "body"),
+            _thermal_separator_block(),
+            _thermal_text_block("MAHSULOTLAR", "section"),
+        ]
     )
-    story.extend(_build_products_section(operations, currency_code, styles))
-    story.extend(
-        _build_summary_section(
-            amount=amount,
-            previous_debt=previous_debt_doc_currency,
-            total_debt=total_debt_doc_currency,
-            currency_code=currency_code,
-            styles=styles,
-        )
-    )
-    story.extend(_build_signatures_section(company_name, partner_name, styles))
 
-    pdf.build(story)
-    return output.getvalue()
+    if operations:
+        for index, op in enumerate(operations, start=1):
+            item = op.get("item") or {}
+            item_name = str(item.get("name") or item.get("code") or f"Item-{item.get('id', '-')}")
+            quantity = float(op.get("quantity") or 0)
+            price = float(op.get("price") or 0)
+            row_total = quantity * price
+            blocks.extend(
+                [
+                    _thermal_text_block(f"{index}. {item_name}", "body"),
+                    _thermal_text_block(
+                        f"   {_thermal_quantity(quantity)} x {format_money(price)} = {format_money(row_total)}",
+                        "meta",
+                    ),
+                ]
+            )
+    else:
+        blocks.append(_thermal_text_block("Pozitsiyalar topilmadi", "body"))
+
+    blocks.extend(
+        [
+            _thermal_separator_block(),
+            _thermal_text_block(f"Jami: {_thermal_money(amount, currency_code)}", "total"),
+            _thermal_text_block(f"Eski qarz: {_thermal_money(previous_debt_doc_currency, currency_code)}", "strong"),
+            _thermal_text_block(f"Umumiy qarz: {_thermal_money(total_debt_doc_currency, currency_code)}", "total"),
+        ]
+    )
+
+    return _thermal_render_blocks(blocks)
 
 
 def render_payment_pdf(
@@ -538,19 +746,6 @@ def render_payment_pdf(
     current_debt_base: float,
     timezone_name: str,
 ) -> bytes:
-    _register_fonts()
-    styles = _pdf_styles()
-
-    output = BytesIO()
-    pdf = SimpleDocTemplate(
-        output,
-        pagesize=A4,
-        leftMargin=16 * mm,
-        rightMargin=16 * mm,
-        topMargin=14 * mm,
-        bottomMargin=14 * mm,
-    )
-
     company_name = _extract_company_name(payment_doc)
     actor_name = _person_name(payment_doc.get("attached_user")) or "Noma'lum"
     partner = payment_doc.get("partner") or {}
@@ -568,50 +763,30 @@ def render_payment_pdf(
     payment_type_name = str(payment_type.get("name") or "-")
     description = str(payment_doc.get("description") or "-")
 
-    story = []
-    story.extend(
-        _build_header_block(
-            company_name,
-            "",
-            doc_code,
-            doc_date,
-            styles,
-            title_text="TO'LOV HUJJATI",
-            subtitle_text="To'lov hujjati",
-        )
-    )
-    story.extend(
-        _build_info_section(
-            "MIJOZ MA'LUMOTLARI",
-            [
-                ("Nomi", partner_name, "Tel", str(partner_phone)),
-                ("To'lov turi", payment_type_name, "Amalni bajargan", actor_name),
-                ("Izoh", description, "Korxona", company_name),
-            ],
-            styles,
-        )
-    )
-    story.extend(
-        _build_payment_section(
-            payment_amount=payment_amount,
-            currency_code=currency_code,
-            payment_type_name=payment_type_name,
-            styles=styles,
-        )
-    )
-    story.extend(
-        _build_payment_summary_section(
-            payment_amount=payment_amount,
-            previous_debt=previous_debt_doc_currency,
-            current_debt=current_debt_doc_currency,
-            currency_code=currency_code,
-            styles=styles,
-        )
-    )
-    story.extend(_build_signatures_section(company_name, partner_name, styles))
+    blocks: list[dict[str, Any]] = [
+        _thermal_text_block(company_name, "brand"),
+        _thermal_text_block("TO'LOV CHEKI", "title"),
+        _thermal_separator_block(),
+        _thermal_text_block(f"Kod: {doc_code}", "strong"),
+        _thermal_text_block(f"Sana: {doc_date}", "body"),
+        _thermal_text_block(f"Mijoz: {partner_name}", "body"),
+        _thermal_text_block(f"Tel: {partner_phone}", "body"),
+        _thermal_text_block(f"To'lov turi: {payment_type_name}", "body"),
+        _thermal_text_block(f"Qabul qilgan: {actor_name}", "body"),
+    ]
+    if description and description != "-":
+        blocks.append(_thermal_text_block(f"Izoh: {description}", "body"))
 
-    pdf.build(story)
-    return output.getvalue()
+    blocks.extend(
+        [
+            _thermal_separator_block(),
+            _thermal_text_block(f"To'lov: {_thermal_money(payment_amount, currency_code)}", "total"),
+            _thermal_text_block(f"Oldingi qarz: {_thermal_money(previous_debt_doc_currency, currency_code)}", "strong"),
+            _thermal_text_block(f"Qolgan qarz: {_thermal_money(current_debt_doc_currency, currency_code)}", "total"),
+        ]
+    )
+
+    return _thermal_render_blocks(blocks)
 
 
 def render_movement_pdf(
