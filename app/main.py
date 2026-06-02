@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -79,6 +80,7 @@ EVENT_BOT_PREFERENCES = {
 }
 
 app = FastAPI(title=f"{settings.app_brand_name} REGOS Bot", version="2.0.0")
+_CHAT_SEND_LOCKS: dict[tuple[str, str], asyncio.Lock] = {}
 
 
 def _any_telegram_enabled() -> bool:
@@ -147,6 +149,51 @@ def _is_allowed_group_chat(bot_key: str, chat_id: int | str) -> bool:
     return str(chat_id) == str(config.group_chat_id)
 
 
+def _get_chat_send_lock(bot_key: str, chat_id: int | str) -> asyncio.Lock:
+    key = (bot_key, str(chat_id))
+    lock = _CHAT_SEND_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _CHAT_SEND_LOCKS[key] = lock
+    return lock
+
+
+async def _send_message_result_unlocked(
+    client: TelegramClient,
+    chat_id: int | str,
+    text: str,
+    *,
+    reply_markup: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    chunks = _split_telegram_text(text)
+    last_result: dict[str, Any] = {}
+    for index, chunk in enumerate(chunks):
+        last_result = await client.send_message_result(
+            chat_id,
+            chunk,
+            reply_markup=reply_markup if index == 0 else None,
+        )
+    return last_result
+
+
+async def _send_bundle_result_unlocked(
+    client: TelegramClient,
+    chat_id: int | str,
+    *,
+    pdf_bytes: bytes,
+    caption: str,
+    filename: str,
+    reply_to_message_id: int | None = None,
+) -> dict[str, Any]:
+    return await client.send_document_result(
+        chat_id,
+        pdf_bytes,
+        caption=caption,
+        filename=filename,
+        reply_to_message_id=reply_to_message_id,
+    )
+
+
 async def _send_bundle(
     preferred_bot_key: str,
     chat_id: int | str,
@@ -159,7 +206,14 @@ async def _send_bundle(
     if client is None:
         logger.info("Telegram client sozlanmagan. bot=%s", actual_bot_key)
         return
-    await client.send_document_bytes(chat_id, pdf_bytes, caption=caption, filename=filename)
+    async with _get_chat_send_lock(actual_bot_key, chat_id):
+        await _send_bundle_result_unlocked(
+            client,
+            chat_id,
+            pdf_bytes=pdf_bytes,
+            caption=caption,
+            filename=filename,
+        )
 
 
 async def _send_message(
@@ -174,12 +228,12 @@ async def _send_message(
         logger.info("Telegram client sozlanmagan. bot=%s", actual_bot_key)
         return
 
-    chunks = _split_telegram_text(text)
-    for index, chunk in enumerate(chunks):
-        await client.send_message(
+    async with _get_chat_send_lock(actual_bot_key, chat_id):
+        await _send_message_result_unlocked(
+            client,
             chat_id,
-            chunk,
-            reply_markup=reply_markup if index == 0 else None,
+            text,
+            reply_markup=reply_markup,
         )
 
 
@@ -257,6 +311,27 @@ async def _send_to_customer_if_mapped(
     )
 
 
+async def _send_text_and_bundle_to_customer_if_mapped(
+    preferred_bot_key: str,
+    partner: dict[str, Any],
+    *,
+    text: str,
+    pdf_bytes: bytes,
+    caption: str,
+    filename: str,
+    private_bot_key: str | None = None,
+) -> None:
+    await _send_text_and_bundle_to_mapped_phones(
+        preferred_bot_key,
+        [_resolve_contact_phone(partner)],
+        text=text,
+        pdf_bytes=pdf_bytes,
+        caption=caption,
+        filename=filename,
+        private_bot_key=private_bot_key,
+    )
+
+
 async def _send_message_to_customer_if_mapped(
     preferred_bot_key: str,
     partner: dict[str, Any],
@@ -270,6 +345,33 @@ async def _send_message_to_customer_if_mapped(
         text=text,
         private_bot_key=private_bot_key,
     )
+
+
+async def _send_text_and_bundle(
+    preferred_bot_key: str,
+    chat_id: int | str,
+    *,
+    text: str,
+    pdf_bytes: bytes,
+    caption: str,
+    filename: str,
+) -> None:
+    actual_bot_key, _, client = _get_telegram_client(preferred_bot_key)
+    if client is None:
+        logger.info("Telegram client sozlanmagan. bot=%s", actual_bot_key)
+        return
+
+    async with _get_chat_send_lock(actual_bot_key, chat_id):
+        message_result = await _send_message_result_unlocked(client, chat_id, text)
+        reply_to_message_id = _safe_int(message_result.get("message_id")) or None
+        await _send_bundle_result_unlocked(
+            client,
+            chat_id,
+            pdf_bytes=pdf_bytes,
+            caption=caption,
+            filename=filename,
+            reply_to_message_id=reply_to_message_id,
+        )
 
 
 async def _send_to_mapped_phones(
@@ -306,6 +408,49 @@ async def _send_to_mapped_phones(
         await _send_bundle(
             actual_bot_key,
             chat_id,
+            pdf_bytes=pdf_bytes,
+            caption=caption,
+            filename=filename,
+        )
+        sent_chat_ids.add(chat_id)
+
+
+async def _send_text_and_bundle_to_mapped_phones(
+    preferred_bot_key: str,
+    phones: list[str],
+    *,
+    text: str,
+    pdf_bytes: bytes,
+    caption: str,
+    filename: str,
+    private_bot_key: str | None = None,
+) -> None:
+    if not _any_telegram_enabled():
+        logger.info("Telegram hali sozlanmagan. Private xabar yuborish o'tkazib yuborildi.")
+        return
+
+    target_bot_key = private_bot_key or preferred_bot_key
+    actual_bot_key, _, _ = _get_telegram_client(target_bot_key)
+    sent_chat_ids: set[int] = set()
+    seen_phones: set[str] = set()
+
+    for raw_phone in phones:
+        phone = normalize_phone(extract_first_phone(str(raw_phone or "")))
+        if not phone or phone in seen_phones:
+            continue
+        seen_phones.add(phone)
+
+        chat_id = storage.get_chat_id_by_phone(actual_bot_key, phone)
+        if not chat_id:
+            logger.info("Private chat_id topilmadi. bot=%s phone=%s", actual_bot_key, phone)
+            continue
+        if chat_id in sent_chat_ids:
+            continue
+
+        await _send_text_and_bundle(
+            actual_bot_key,
+            chat_id,
+            text=text,
             pdf_bytes=pdf_bytes,
             caption=caption,
             filename=filename,
@@ -423,10 +568,10 @@ async def process_wholesale_performed(doc_id: int, *, bot_key: str = "wholesale"
 
     _, config, _ = _get_telegram_client(bot_key)
     if config.enabled and config.group_configured:
-        await _send_message(bot_key, config.group_chat_id, sale_text)
-        await _send_bundle(
+        await _send_text_and_bundle(
             bot_key,
             config.group_chat_id,
+            text=sale_text,
             pdf_bytes=pdf_bytes,
             caption=caption,
             filename=filename,
@@ -439,15 +584,10 @@ async def process_wholesale_performed(doc_id: int, *, bot_key: str = "wholesale"
             config.group_configured,
         )
 
-    await _send_message_to_customer_if_mapped(
+    await _send_text_and_bundle_to_customer_if_mapped(
         bot_key,
         partner,
         text=sale_text,
-        private_bot_key=_preferred_wholesale_private_bot_key(),
-    )
-    await _send_to_customer_if_mapped(
-        bot_key,
-        partner,
         pdf_bytes=pdf_bytes,
         caption=caption,
         filename=filename,

@@ -81,13 +81,34 @@ class TelegramClient:
         *,
         filename: str = "cheque.pdf",
         caption: str = "",
+        reply_to_message_id: int | None = None,
     ) -> None:
+        await self.send_document_result(
+            chat_id,
+            document_bytes,
+            filename=filename,
+            caption=caption,
+            reply_to_message_id=reply_to_message_id,
+        )
+
+    async def send_document_result(
+        self,
+        chat_id: str | int,
+        document_bytes: bytes,
+        *,
+        filename: str = "cheque.pdf",
+        caption: str = "",
+        reply_to_message_id: int | None = None,
+    ) -> dict:
         doc_buf = BytesIO(document_bytes)
         files = {"document": (filename, doc_buf, "application/pdf")}
         data = {"chat_id": str(chat_id)}
         if caption:
             data["caption"] = caption
-        await self._post("sendDocument", data=data, files=files)
+        if reply_to_message_id is not None:
+            data["reply_to_message_id"] = str(reply_to_message_id)
+        payload = await self._post("sendDocument", data=data, files=files)
+        return payload.get("result", {})
 
     async def set_webhook(self, webhook_url: str) -> dict:
         return await self._post("setWebhook", data={"url": webhook_url})
