@@ -334,6 +334,131 @@ def _thermal_money(amount: float, currency_code: str) -> str:
     return f"{_format_currency_value(amount)} {currency_code}"
 
 
+def _thermal_receipt_styles() -> dict[str, ParagraphStyle]:
+    base = getSampleStyleSheet()
+    return {
+        "brand": ParagraphStyle(
+            "thermal_brand",
+            parent=base["Normal"],
+            fontName="RegosSansBold",
+            fontSize=15,
+            leading=17,
+            alignment=1,
+            textColor=colors.black,
+            spaceAfter=1,
+        ),
+        "subtitle": ParagraphStyle(
+            "thermal_subtitle",
+            parent=base["Normal"],
+            fontName="RegosSans",
+            fontSize=8.6,
+            leading=10,
+            alignment=1,
+            textColor=colors.black,
+            spaceAfter=1,
+        ),
+        "title": ParagraphStyle(
+            "thermal_title",
+            parent=base["Normal"],
+            fontName="RegosSansBold",
+            fontSize=11.5,
+            leading=13,
+            alignment=1,
+            textColor=colors.black,
+            spaceAfter=4,
+        ),
+        "info_label": ParagraphStyle(
+            "thermal_info_label",
+            parent=base["Normal"],
+            fontName="RegosSansBold",
+            fontSize=8.3,
+            leading=10,
+            textColor=colors.black,
+        ),
+        "info_value": ParagraphStyle(
+            "thermal_info_value",
+            parent=base["Normal"],
+            fontName="RegosSans",
+            fontSize=8.3,
+            leading=10,
+            textColor=colors.black,
+        ),
+        "table_header": ParagraphStyle(
+            "thermal_table_header",
+            parent=base["Normal"],
+            fontName="RegosSansBold",
+            fontSize=7.6,
+            leading=9,
+            alignment=1,
+            textColor=colors.black,
+        ),
+        "table_item": ParagraphStyle(
+            "thermal_table_item",
+            parent=base["Normal"],
+            fontName="RegosSans",
+            fontSize=7.4,
+            leading=8.7,
+            textColor=colors.black,
+        ),
+        "table_qty": ParagraphStyle(
+            "thermal_table_qty",
+            parent=base["Normal"],
+            fontName="RegosSans",
+            fontSize=7.2,
+            leading=8.5,
+            alignment=1,
+            textColor=colors.black,
+        ),
+        "table_num": ParagraphStyle(
+            "thermal_table_num",
+            parent=base["Normal"],
+            fontName="RegosSans",
+            fontSize=7.2,
+            leading=8.5,
+            alignment=2,
+            textColor=colors.black,
+        ),
+        "summary_label": ParagraphStyle(
+            "thermal_summary_label",
+            parent=base["Normal"],
+            fontName="RegosSansBold",
+            fontSize=9.7,
+            leading=11.8,
+            textColor=colors.black,
+        ),
+        "summary_value": ParagraphStyle(
+            "thermal_summary_value",
+            parent=base["Normal"],
+            fontName="RegosSansBold",
+            fontSize=9.7,
+            leading=11.8,
+            alignment=2,
+            textColor=colors.black,
+        ),
+    }
+
+
+def _thermal_story_pdf(story: list[Any]) -> bytes:
+    _register_fonts()
+    available_width = _THERMAL_CONTENT_WIDTH
+    estimated_height = (_THERMAL_MARGIN_Y * 2) + (8 * mm)
+    for flowable in story:
+        _, height = flowable.wrap(available_width, 10_000)
+        estimated_height += height
+
+    output = BytesIO()
+    pdf = SimpleDocTemplate(
+        output,
+        pagesize=(_THERMAL_PAGE_WIDTH, max(estimated_height, 120 * mm)),
+        leftMargin=_THERMAL_MARGIN_X,
+        rightMargin=_THERMAL_MARGIN_X,
+        topMargin=_THERMAL_MARGIN_Y,
+        bottomMargin=_THERMAL_MARGIN_Y,
+    )
+    pdf.build(story)
+    return output.getvalue()
+
+
 def _thermal_quantity(quantity: float) -> str:
     rounded = round(float(quantity or 0), 3)
     if abs(rounded - int(rounded)) < 0.001:
@@ -729,6 +854,7 @@ def render_sale_pdf(
     previous_debt_base: float,
     timezone_name: str,
 ) -> bytes:
+    _register_fonts()
     company_name = _extract_company_name(doc)
     stock_name = _extract_stock_name(doc)
     actor_name = _person_name(doc.get("attached_user")) or _person_name(doc.get("seller")) or "Noma'lum"
@@ -744,25 +870,58 @@ def render_sale_pdf(
     previous_debt_doc_currency = _convert_base_to_doc_currency(previous_debt_base, exchange_rate, currency)
     total_debt_doc_currency = previous_debt_doc_currency + amount
 
-    blocks: list[dict[str, Any]] = [
-        _thermal_text_block(company_name, "brand"),
+    styles = _thermal_receipt_styles()
+    story: list[Any] = [
+        Paragraph(_escape(company_name), styles["brand"]),
     ]
     if stock_name and stock_name != "-":
-        blocks.append(_thermal_text_block(stock_name, "subtitle"))
-    blocks.extend(
-        [
-            _thermal_text_block("SAVDO CHEKI", "title"),
-            _thermal_separator_block(),
-            _thermal_text_block(f"Kod: {doc_code}", "strong"),
-            _thermal_text_block(f"Sana: {doc_date}", "body"),
-            _thermal_text_block(f"Mijoz: {partner_name}", "body"),
-            _thermal_text_block(f"Tel: {partner_phone}", "body"),
-            _thermal_text_block(f"Sotuvchi: {actor_name}", "body"),
-            _thermal_separator_block(),
-            _thermal_text_block("MAHSULOTLAR", "section"),
-        ]
-    )
+        story.append(Paragraph(_escape(stock_name.upper()), styles["subtitle"]))
+    story.append(Paragraph("SAVDO CHEKI", styles["title"]))
 
+    info_rows = [
+        [
+            Paragraph("Kod:", styles["info_label"]),
+            Paragraph(_escape(str(doc_code)), styles["info_value"]),
+        ],
+        [
+            Paragraph("Sana:", styles["info_label"]),
+            Paragraph(_escape(doc_date), styles["info_value"]),
+        ],
+        [
+            Paragraph("Mijoz:", styles["info_label"]),
+            Paragraph(_escape(partner_name), styles["info_value"]),
+        ],
+        [
+            Paragraph("Tel:", styles["info_label"]),
+            Paragraph(_escape(str(partner_phone)), styles["info_value"]),
+        ],
+        [
+            Paragraph("Sotuvchi:", styles["info_label"]),
+            Paragraph(_escape(actor_name), styles["info_value"]),
+        ],
+    ]
+    info_table = Table(info_rows, colWidths=[15 * mm, _THERMAL_CONTENT_WIDTH - (15 * mm)])
+    info_table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 1),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ]
+        )
+    )
+    story.extend([info_table, Spacer(1, 2 * mm)])
+
+    product_rows: list[list[Any]] = [
+        [
+            Paragraph("Mahsulot", styles["table_header"]),
+            Paragraph("Soni", styles["table_header"]),
+            Paragraph("Narxi", styles["table_header"]),
+            Paragraph("Summa", styles["table_header"]),
+        ]
+    ]
     if operations:
         for index, op in enumerate(operations, start=1):
             item = op.get("item") or {}
@@ -770,26 +929,74 @@ def render_sale_pdf(
             quantity = float(op.get("quantity") or 0)
             price = float(op.get("price") or 0)
             row_total = quantity * price
-            item_text = f"{index}. {item_name}"
-            detail_text = (
-                f"{_thermal_quantity(quantity)} x {format_money(price)} = {format_money(row_total)}"
+            product_rows.append(
+                [
+                    Paragraph(_escape(f"{index}. {item_name}"), styles["table_item"]),
+                    Paragraph(_escape(_thermal_quantity(quantity)), styles["table_qty"]),
+                    Paragraph(_escape(format_money(price)), styles["table_num"]),
+                    Paragraph(_escape(format_money(row_total)), styles["table_num"]),
+                ]
             )
-            blocks.append(_thermal_item_block(item_text, detail_text))
-            if index < len(operations):
-                blocks.append(_thermal_separator_block())
     else:
-        blocks.append(_thermal_text_block("Pozitsiyalar topilmadi", "body"))
+        product_rows.append(
+            [
+                Paragraph("Pozitsiyalar topilmadi", styles["table_item"]),
+                Paragraph("-", styles["table_qty"]),
+                Paragraph("-", styles["table_num"]),
+                Paragraph("-", styles["table_num"]),
+            ]
+        )
 
-    blocks.extend(
-        [
-            _thermal_separator_block(),
-            _thermal_text_block(f"Jami: {_thermal_money(amount, currency_code)}", "total"),
-            _thermal_text_block(f"Eski qarz: {_thermal_money(previous_debt_doc_currency, currency_code)}", "strong"),
-            _thermal_text_block(f"Umumiy qarz: {_thermal_money(total_debt_doc_currency, currency_code)}", "total"),
-        ]
+    product_table = Table(
+        product_rows,
+        colWidths=[34 * mm, 8 * mm, 12 * mm, 18 * mm],
+        repeatRows=1,
     )
+    product_table.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
+                ("INNERGRID", (0, 0), (-1, -1), 0.45, colors.black),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2.2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2.2),
+                ("TOPPADDING", (0, 0), (-1, -1), 2.4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2.4),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.white),
+            ]
+        )
+    )
+    story.extend([product_table, Spacer(1, 3 * mm)])
 
-    return _thermal_render_blocks(blocks)
+    summary_rows = [
+        [
+            Paragraph("Jami:", styles["summary_label"]),
+            Paragraph(_escape(_thermal_money(amount, currency_code)), styles["summary_value"]),
+        ],
+        [
+            Paragraph("Eski qarz:", styles["summary_label"]),
+            Paragraph(_escape(_thermal_money(previous_debt_doc_currency, currency_code)), styles["summary_value"]),
+        ],
+        [
+            Paragraph("Umumiy qarz:", styles["summary_label"]),
+            Paragraph(_escape(_thermal_money(total_debt_doc_currency, currency_code)), styles["summary_value"]),
+        ],
+    ]
+    summary_table = Table(summary_rows, colWidths=[24 * mm, _THERMAL_CONTENT_WIDTH - (24 * mm)])
+    summary_table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 1),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ]
+        )
+    )
+    story.append(summary_table)
+
+    return _thermal_story_pdf(story)
 
 
 def render_payment_pdf(
