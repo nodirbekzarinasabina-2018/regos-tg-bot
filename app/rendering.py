@@ -914,14 +914,34 @@ def render_sale_pdf(
     )
     story.extend([info_table, Spacer(1, 2 * mm)])
 
-    product_rows: list[list[Any]] = [
+    product_col_widths = [34 * mm, 8 * mm, 12 * mm, 18 * mm]
+    product_header_table = Table(
         [
-            Paragraph("Mahsulot", styles["table_header"]),
-            Paragraph("Soni", styles["table_header"]),
-            Paragraph("Narxi", styles["table_header"]),
-            Paragraph("Summa", styles["table_header"]),
-        ]
-    ]
+            [
+                Paragraph("Mahsulot", styles["table_header"]),
+                Paragraph("Soni", styles["table_header"]),
+                Paragraph("Narxi", styles["table_header"]),
+                Paragraph("Summa", styles["table_header"]),
+            ]
+        ],
+        colWidths=[34 * mm, 8 * mm, 12 * mm, 18 * mm],
+    )
+    product_header_table.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 1.2, colors.black),
+                ("INNERGRID", (0, 0), (-1, -1), 1.0, colors.black),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2.4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2.4),
+                ("TOPPADDING", (0, 0), (-1, -1), 3.0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3.0),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+            ]
+        )
+    )
+    story.extend([product_header_table, Spacer(1, 0.8 * mm)])
+
     if operations:
         for index, op in enumerate(operations, start=1):
             item = op.get("item") or {}
@@ -929,44 +949,61 @@ def render_sale_pdf(
             quantity = float(op.get("quantity") or 0)
             price = float(op.get("price") or 0)
             row_total = quantity * price
-            product_rows.append(
+            row_table = Table(
                 [
-                    Paragraph(_escape(f"{index}. {item_name}"), styles["table_item"]),
-                    Paragraph(_escape(_thermal_quantity(quantity)), styles["table_qty"]),
-                    Paragraph(_escape(format_money(price)), styles["table_num"]),
-                    Paragraph(_escape(format_money(row_total)), styles["table_num"]),
+                    [
+                        Paragraph(_escape(f"{index}. {item_name}"), styles["table_item"]),
+                        Paragraph(_escape(_thermal_quantity(quantity)), styles["table_qty"]),
+                        Paragraph(_escape(format_money(price)), styles["table_num"]),
+                        Paragraph(_escape(format_money(row_total)), styles["table_num"]),
+                    ]
+                ],
+                colWidths=product_col_widths,
+            )
+            row_table.setStyle(
+                TableStyle(
+                    [
+                        ("BOX", (0, 0), (-1, -1), 1.0, colors.black),
+                        ("INNERGRID", (0, 0), (-1, -1), 0.9, colors.black),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 2.4),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 2.4),
+                        ("TOPPADDING", (0, 0), (-1, -1), 3.0),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 3.0),
+                        ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                    ]
+                )
+            )
+            story.extend([row_table, Spacer(1, 0.7 * mm)])
+    else:
+        empty_row_table = Table(
+            [
+                [
+                    Paragraph("Pozitsiyalar topilmadi", styles["table_item"]),
+                    Paragraph("-", styles["table_qty"]),
+                    Paragraph("-", styles["table_num"]),
+                    Paragraph("-", styles["table_num"]),
+                ]
+            ],
+            colWidths=product_col_widths,
+        )
+        empty_row_table.setStyle(
+            TableStyle(
+                [
+                    ("BOX", (0, 0), (-1, -1), 1.0, colors.black),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.9, colors.black),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 2.4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 2.4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3.0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3.0),
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.white),
                 ]
             )
-    else:
-        product_rows.append(
-            [
-                Paragraph("Pozitsiyalar topilmadi", styles["table_item"]),
-                Paragraph("-", styles["table_qty"]),
-                Paragraph("-", styles["table_num"]),
-                Paragraph("-", styles["table_num"]),
-            ]
         )
+        story.extend([empty_row_table, Spacer(1, 0.7 * mm)])
 
-    product_table = Table(
-        product_rows,
-        colWidths=[34 * mm, 8 * mm, 12 * mm, 18 * mm],
-        repeatRows=1,
-    )
-    product_table.setStyle(
-        TableStyle(
-            [
-                ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
-                ("INNERGRID", (0, 0), (-1, -1), 0.45, colors.black),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 2.2),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 2.2),
-                ("TOPPADDING", (0, 0), (-1, -1), 2.4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 2.4),
-                ("BACKGROUND", (0, 0), (-1, 0), colors.white),
-            ]
-        )
-    )
-    story.extend([product_table, Spacer(1, 3 * mm)])
+    story.append(Spacer(1, 2 * mm))
 
     summary_rows = [
         [
